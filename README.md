@@ -29,7 +29,7 @@ export ANTHROPIC_API_KEY=your-key-here
 python app.py
 ```
 
-Open http://localhost:5000 in your browser.
+Open http://localhost:5001 in your browser.
 
 ## How It Works
 
