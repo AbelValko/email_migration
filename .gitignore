@@ -1,5 +1,15 @@
+# Runtime data
+data/
+cache/
+
+# Claude Code
+.claude/
+
+# Python
 __pycache__/
 *.pyc
 *.pyo
-.DS_Store
-*.mbox
+.env
+
+# Misc
+=0.40.0

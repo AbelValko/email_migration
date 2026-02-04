@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analyzing... - Email Service Analyzer</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        .progress-container {
+            max-width: 500px;
+            margin: 2rem auto;
+            text-align: center;
+        }
+        .progress-bar-wrapper {
+            background: #e0e0e0;
+            border-radius: 10px;
+            overflow: hidden;
+            height: 24px;
+            margin: 1.5rem 0;
+        }
+        .progress-bar {
+            background: linear-gradient(90deg, #4CAF50, #8BC34A);
+            height: 100%;
+            width: 0%;
+            transition: width 0.3s ease;
+            border-radius: 10px;
+        }
+        .progress-text {
+            font-size: 1.1rem;
+            color: #555;
+            margin-bottom: 0.5rem;
+        }
+        .progress-stats {
+            font-size: 0.9rem;
+            color: #888;
+        }
+        .spinner-large {
+            width: 48px;
+            height: 48px;
+            border: 4px solid #e0e0e0;
+            border-top-color: #4CAF50;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1.5rem;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .error-message {
+            background: #ffebee;
+            color: #c62828;
+            padding: 1rem;
+            border-radius: 8px;
+            margin-top: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Email Service Analyzer</h1>
+            <p class="subtitle">Analyzing your emails...</p>
+        </header>
+
+        <main>
+            <div class="form-card progress-container">
+                <div class="spinner-large" id="spinner"></div>
+                <div class="progress-text" id="stage">Connecting...</div>
+                <div class="progress-bar-wrapper">
+                    <div class="progress-bar" id="progress-bar"></div>
+                </div>
+                <div class="progress-stats" id="stats"></div>
+                <div class="error-message" id="error" style="display: none;"></div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const taskId = "{{ task_id }}";
+        const progressBar = document.getElementById('progress-bar');
+        const stageEl = document.getElementById('stage');
+        const statsEl = document.getElementById('stats');
+        const spinnerEl = document.getElementById('spinner');
+        const errorEl = document.getElementById('error');
+
+        async function checkProgress() {
+            try {
+                const response = await fetch(`/api/progress/${taskId}`);
+                const data = await response.json();
+
+                if (data.error && response.status === 404) {
+                    errorEl.textContent = 'Task not found. Please try again.';
+                    errorEl.style.display = 'block';
+                    spinnerEl.style.display = 'none';
+                    return;
+                }
+
+                stageEl.textContent = data.stage || 'Processing...';
+
+                if (data.total > 0) {
+                    const percent = Math.round((data.current / data.total) * 100);
+                    progressBar.style.width = percent + '%';
+                    statsEl.textContent = `${data.current.toLocaleString()} / ${data.total.toLocaleString()} emails`;
+                }
+
+                if (data.status === 'complete') {
+                    progressBar.style.width = '100%';
+                    stageEl.textContent = 'Complete! Redirecting...';
+                    setTimeout(() => {
+                        window.location.href = `/results/${taskId}`;
+                    }, 500);
+                    return;
+                }
+
+                if (data.status === 'error') {
+                    errorEl.textContent = data.error || 'An error occurred';
+                    errorEl.style.display = 'block';
+                    spinnerEl.style.display = 'none';
+                    stageEl.textContent = 'Error';
+                    return;
+                }
+
+                // Keep polling
+                setTimeout(checkProgress, 500);
+            } catch (e) {
+                console.error('Error checking progress:', e);
+                setTimeout(checkProgress, 1000);
+            }
+        }
+
+        checkProgress();
+    </script>
+</body>
+</html>

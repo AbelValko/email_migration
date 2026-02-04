@@ -266,63 +266,110 @@ def decode_header_value(value: str | None) -> str:
 
 
 def parse_imap(host: str, username: str, password: str, folder: str = 'INBOX',
-               limit: int | None = None) -> Generator[dict, None, None]:
+               limit: int | None = None,
+               progress_callback=None) -> Generator[dict, None, None]:
     """
     Connect to IMAP server and yield email metadata dictionaries.
 
     Only fetches headers (FROM, SUBJECT, DATE) - not full body for speed.
     """
+    print(f"[IMAP] Connecting to {host}...", flush=True)
+    if progress_callback:
+        progress_callback(0, 0, 'Connecting...')
+
     mail = imaplib.IMAP4_SSL(host, 993)
     try:
+        print(f"[IMAP] Logging in as {username}...", flush=True)
+        if progress_callback:
+            progress_callback(0, 0, 'Logging in...')
         mail.login(username, password)
+
+        print(f"[IMAP] Selecting folder: {folder}", flush=True)
+        if progress_callback:
+            progress_callback(0, 0, f'Opening {folder}...')
         mail.select(folder, readonly=True)
 
         # Search for all emails
+        print("[IMAP] Searching for emails...", flush=True)
+        if progress_callback:
+            progress_callback(0, 0, 'Counting emails...')
         _, message_numbers = mail.search(None, 'ALL')
 
         if not message_numbers[0]:
+            print("[IMAP] No emails found in folder", flush=True)
             return
 
         msg_nums = message_numbers[0].split()
+        total_in_folder = len(msg_nums)
+        print(f"[IMAP] Found {total_in_folder} emails in folder", flush=True)
 
         # Apply limit if specified (fetch most recent)
         if limit and len(msg_nums) > limit:
             msg_nums = msg_nums[-limit:]
+            print(f"[IMAP] Limiting to most recent {limit} emails", flush=True)
 
-        for num in msg_nums:
+        # Batch fetch for efficiency - fetch in chunks of 50
+        BATCH_SIZE = 50
+        total_to_fetch = len(msg_nums)
+        print(f"[IMAP] Fetching {total_to_fetch} email headers in batches of {BATCH_SIZE}...", flush=True)
+        if progress_callback:
+            progress_callback(0, total_to_fetch, 'Fetching emails...')
+
+        for batch_start in range(0, total_to_fetch, BATCH_SIZE):
+            batch_end = min(batch_start + BATCH_SIZE, total_to_fetch)
+            batch = msg_nums[batch_start:batch_end]
+
+            # Create a range string for batch fetch (e.g., "1,2,3,4,5")
+            msg_set = b','.join(batch)
+
             try:
-                # Fetch only headers
-                _, msg_data = mail.fetch(num, '(BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE)])')
+                # Fetch only headers for entire batch
+                _, msg_data = mail.fetch(msg_set, '(BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE)])')
 
-                if not msg_data or not msg_data[0]:
+                if not msg_data:
                     continue
 
-                raw_headers = msg_data[0][1]
-                if isinstance(raw_headers, bytes):
-                    msg = message_from_bytes(raw_headers)
+                # Process each message in the batch response
+                for item in msg_data:
+                    if not item or not isinstance(item, tuple) or len(item) < 2:
+                        continue
 
-                    sender = decode_header_value(msg.get('From', ''))
-                    subject = decode_header_value(msg.get('Subject', ''))
-                    date_str = msg.get('Date', '')
+                    raw_headers = item[1]
+                    if isinstance(raw_headers, bytes):
+                        try:
+                            msg = message_from_bytes(raw_headers)
 
-                    yield {
-                        'sender': sender,
-                        'subject': subject,
-                        'date': parse_date(date_str),
-                        'domain': extract_domain(sender),
-                    }
-            except Exception:
-                # Skip problematic messages
+                            sender = decode_header_value(msg.get('From', ''))
+                            subject = decode_header_value(msg.get('Subject', ''))
+                            date_str = msg.get('Date', '')
+
+                            yield {
+                                'sender': sender,
+                                'subject': subject,
+                                'date': parse_date(date_str),
+                                'domain': extract_domain(sender),
+                            }
+                        except Exception:
+                            continue
+            except Exception as e:
+                print(f"[IMAP] Error fetching batch: {e}")
                 continue
+
+            print(f"[IMAP] Fetched {batch_end}/{total_to_fetch} emails...", flush=True)
+            if progress_callback:
+                progress_callback(batch_end, total_to_fetch, 'Fetching emails...')
     finally:
+        print("[IMAP] Disconnecting...", flush=True)
         try:
             mail.logout()
         except Exception:
             pass
+        print("[IMAP] Done fetching emails", flush=True)
 
 
 def analyze_emails_imap(host: str, username: str, password: str,
-                        folder: str = 'INBOX', limit: int | None = None) -> dict:
+                        folder: str = 'INBOX', limit: int | None = None,
+                        progress_callback=None) -> dict:
     """
     Analyze emails from IMAP server and return grouped results by domain.
 
@@ -340,7 +387,7 @@ def analyze_emails_imap(host: str, username: str, password: str,
     total_emails = 0
     service_emails = 0
 
-    for email in parse_imap(host, username, password, folder, limit):
+    for email in parse_imap(host, username, password, folder, limit, progress_callback):
         total_emails += 1
         domain = email.get('domain')
 
@@ -395,6 +442,10 @@ def analyze_emails_imap(host: str, username: str, password: str,
         })
 
     services.sort(key=lambda x: x['count'], reverse=True)
+
+    print(f"[IMAP] Analysis complete: {total_emails} total, {service_emails} service emails, {len(services)} unique domains", flush=True)
+    if progress_callback:
+        progress_callback(total_emails, total_emails, 'Complete!')
 
     return {
         'services': services,

@@ -5,12 +5,136 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Analysis Results - Email Service Analyzer</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        tr.transferred {
+            background-color: #e8f5e9 !important;
+        }
+        tr.transferred td.domain strong {
+            text-decoration: line-through;
+            color: #888;
+        }
+        .done-btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.85rem;
+            transition: all 0.2s ease;
+            min-width: 80px;
+        }
+        .done-btn.pending {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            box-shadow: 0 2px 4px rgba(102, 126, 234, 0.4);
+        }
+        .done-btn.pending:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(102, 126, 234, 0.5);
+        }
+        .done-btn.pending:active {
+            transform: translateY(0);
+        }
+        .done-btn.completed {
+            background: #10b981;
+            color: white;
+            box-shadow: 0 2px 4px rgba(16, 185, 129, 0.3);
+        }
+        .done-btn.completed:hover {
+            background: #059669;
+        }
+        @keyframes celebrate {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+        .done-btn.just-completed {
+            animation: celebrate 0.3s ease;
+        }
+        .help-btn {
+            background: #2196F3;
+            color: white;
+            border: none;
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            margin-left: 8px;
+        }
+        .help-btn:hover {
+            background: #1976D2;
+        }
+        .help-btn:disabled {
+            background: #ccc;
+            cursor: wait;
+        }
+        /* Modal styles */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-overlay.active {
+            display: flex;
+        }
+        .modal {
+            background: white;
+            border-radius: 12px;
+            max-width: 600px;
+            max-height: 80vh;
+            overflow-y: auto;
+            padding: 1.5rem;
+            margin: 1rem;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        }
+        .modal h2 {
+            margin-top: 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: #666;
+        }
+        .modal-content {
+            line-height: 1.6;
+        }
+        .modal-content strong {
+            color: #333;
+        }
+        .modal-loading {
+            text-align: center;
+            padding: 2rem;
+            color: #666;
+        }
+        .modal-error {
+            background: #ffebee;
+            color: #c62828;
+            padding: 1rem;
+            border-radius: 8px;
+        }
+    </style>
 </head>
 <body>
     <div class="container">
         <header>
             <h1>Analysis Results</h1>
+            {% if scan %}
+            <p class="subtitle">{{ scan.email }} - {{ scan.folder }} (scanned {{ scan.timestamp[:16].replace('T', ' ') }})</p>
+            {% else %}
             <p class="subtitle">Services linked to your email address</p>
+            {% endif %}
         </header>
 
         <main>
@@ -27,16 +151,33 @@
                     <span class="stat-value">{{ results.services|length }}</span>
                     <span class="stat-label">Services Found</span>
                 </div>
+                {% if scan %}
+                <div class="stat">
+                    <span class="stat-value" id="transferred-count">{{ scan.transferred|default([])|length }}</span>
+                    <span class="stat-label">Transferred</span>
+                </div>
+                {% endif %}
             </section>
+
+            {% if scan %}
+            <div class="progress-summary" style="margin-bottom: 1rem;">
+                <div style="background: #e0e0e0; border-radius: 8px; height: 8px; overflow: hidden;">
+                    <div id="transfer-progress" style="background: #4CAF50; height: 100%; transition: width 0.3s; width: {{ ((scan.transferred|default([])|length) / results.services|length * 100) if results.services|length > 0 else 0 }}%;"></div>
+                </div>
+                <p style="text-align: center; margin-top: 0.5rem; color: #666; font-size: 0.9rem;">
+                    <span id="progress-text">{{ scan.transferred|default([])|length }} of {{ results.services|length }}</span> services transferred
+                </p>
+            </div>
+            {% endif %}
 
             {% if results.services %}
             <section class="results-table-container">
                 <table class="results-table" id="results-table">
                     <thead>
                         <tr>
+                            {% if scan %}<th style="width: 100px;">Status</th>{% endif %}
                             <th class="sortable" data-sort="domain">Service Domain</th>
                             <th class="sortable" data-sort="count">Emails</th>
-                            <th class="sortable" data-sort="confidence">Confidence</th>
                             <th class="sortable" data-sort="first_seen">First Seen</th>
                             <th class="sortable" data-sort="last_seen">Last Seen</th>
                             <th>Sample Subjects</th>
@@ -44,19 +185,23 @@
                     </thead>
                     <tbody>
                         {% for service in results.services %}
-                        <tr>
+                        <tr class="{% if scan and service.domain in scan.transferred|default([]) %}transferred{% endif %}" data-domain="{{ service.domain }}">
+                            {% if scan %}
+                            <td style="text-align: center;">
+                                <button class="done-btn {% if service.domain in scan.transferred|default([]) %}completed{% else %}pending{% endif %}"
+                                        data-domain="{{ service.domain }}">
+                                    {% if service.domain in scan.transferred|default([]) %}Done{% else %}Mark Done{% endif %}
+                                </button>
+                            </td>
+                            {% endif %}
                             <td class="domain">
                                 <strong>{{ service.domain }}</strong>
                                 {% if service.sender_count > 1 %}
                                 <span class="sender-count">({{ service.sender_count }} senders)</span>
                                 {% endif %}
+                                <button class="help-btn" data-domain="{{ service.domain }}" title="Get help changing email">?</button>
                             </td>
                             <td class="count">{{ service.count }}</td>
-                            <td class="confidence">
-                                <span class="confidence-badge confidence-{{ service.confidence }}">
-                                    {{ service.confidence }}
-                                </span>
-                            </td>
                             <td class="date">{{ service.first_seen[:10] if service.first_seen else 'Unknown' }}</td>
                             <td class="date">{{ service.last_seen[:10] if service.last_seen else 'Unknown' }}</td>
                             <td class="subjects">
@@ -78,13 +223,27 @@
             {% endif %}
 
             <div class="actions">
-                <a href="{{ url_for('index') }}" class="btn">Analyze Another File</a>
+                <a href="{{ url_for('history') }}" class="btn">View History</a>
+                <a href="{{ url_for('imap') }}" class="btn">New Scan</a>
             </div>
         </main>
 
         <footer>
             <p>Your data stays on your computer. No emails are uploaded to any server.</p>
         </footer>
+    </div>
+
+    <!-- Help Modal -->
+    <div class="modal-overlay" id="help-modal">
+        <div class="modal">
+            <h2>
+                <span>How to change email on <span id="modal-domain"></span></span>
+                <button class="modal-close" onclick="closeModal()">&times;</button>
+            </h2>
+            <div class="modal-content" id="modal-content">
+                <div class="modal-loading">Loading instructions...</div>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -119,11 +278,6 @@
                             aVal = parseInt(a.querySelector('.count').textContent);
                             bVal = parseInt(b.querySelector('.count').textContent);
                             break;
-                        case 'confidence':
-                            const order = { high: 3, medium: 2, low: 1 };
-                            aVal = order[a.querySelector('.confidence-badge').textContent.trim()];
-                            bVal = order[b.querySelector('.confidence-badge').textContent.trim()];
-                            break;
                         case 'first_seen':
                         case 'last_seen':
                             aVal = a.querySelectorAll('.date')[column === 'first_seen' ? 0 : 1].textContent;
@@ -141,6 +295,110 @@
                 rows.forEach(row => tbody.appendChild(row));
             });
         });
+
+        // Help modal handling
+        const modal = document.getElementById('help-modal');
+        const modalDomain = document.getElementById('modal-domain');
+        const modalContent = document.getElementById('modal-content');
+
+        function closeModal() {
+            modal.classList.remove('active');
+        }
+
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) closeModal();
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closeModal();
+        });
+
+        // Convert markdown-like formatting to HTML
+        function formatInstructions(text) {
+            return text
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\n/g, '<br>')
+                .replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank">$1</a>');
+        }
+
+        document.querySelectorAll('.help-btn').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const domain = btn.dataset.domain;
+                modalDomain.textContent = domain;
+                modalContent.innerHTML = '<div class="modal-loading">Loading instructions...</div>';
+                modal.classList.add('active');
+                btn.disabled = true;
+
+                try {
+                    const response = await fetch(`/api/email-change-help/${encodeURIComponent(domain)}`);
+                    const data = await response.json();
+
+                    if (data.error) {
+                        modalContent.innerHTML = `<div class="modal-error">${data.error}</div>`;
+                    } else {
+                        modalContent.innerHTML = formatInstructions(data.instructions);
+                    }
+                } catch (err) {
+                    modalContent.innerHTML = `<div class="modal-error">Failed to load instructions: ${err.message}</div>`;
+                } finally {
+                    btn.disabled = false;
+                }
+            });
+        });
+
+        // Transfer button handling
+        {% if scan %}
+        const scanId = "{{ scan.id }}";
+        const totalServices = {{ results.services|length }};
+
+        document.querySelectorAll('.done-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                const domain = e.target.dataset.domain;
+                const isCurrentlyDone = e.target.classList.contains('completed');
+                const transferred = !isCurrentlyDone;
+                const row = e.target.closest('tr');
+
+                // Disable button during request
+                btn.disabled = true;
+
+                try {
+                    const response = await fetch(`/api/scan/${scanId}/transfer`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ domain, transferred })
+                    });
+
+                    const data = await response.json();
+
+                    if (data.success) {
+                        // Update button style
+                        if (transferred) {
+                            btn.classList.remove('pending');
+                            btn.classList.add('completed', 'just-completed');
+                            btn.textContent = 'Done';
+                            row.classList.add('transferred');
+                            setTimeout(() => btn.classList.remove('just-completed'), 300);
+                        } else {
+                            btn.classList.remove('completed');
+                            btn.classList.add('pending');
+                            btn.textContent = 'Mark Done';
+                            row.classList.remove('transferred');
+                        }
+
+                        // Update progress
+                        const count = data.total_transferred;
+                        document.getElementById('transferred-count').textContent = count;
+                        document.getElementById('progress-text').textContent = `${count} of ${totalServices}`;
+                        document.getElementById('transfer-progress').style.width = `${(count / totalServices) * 100}%`;
+                    }
+                } catch (err) {
+                    console.error('Error updating transfer status:', err);
+                } finally {
+                    btn.disabled = false;
+                }
+            });
+        });
+        {% endif %}
     </script>
 </body>
 </html>
