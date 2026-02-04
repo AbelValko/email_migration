@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analysis Results - Email Service Analyzer</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Analysis Results</h1>
+            <p class="subtitle">Services linked to your email address</p>
+        </header>
+
+        <main>
+            <section class="summary">
+                <div class="stat">
+                    <span class="stat-value">{{ results.total_emails }}</span>
+                    <span class="stat-label">Total Emails</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-value">{{ results.service_emails }}</span>
+                    <span class="stat-label">Service Emails</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-value">{{ results.services|length }}</span>
+                    <span class="stat-label">Services Found</span>
+                </div>
+            </section>
+
+            {% if results.services %}
+            <section class="results-table-container">
+                <table class="results-table" id="results-table">
+                    <thead>
+                        <tr>
+                            <th class="sortable" data-sort="domain">Service Domain</th>
+                            <th class="sortable" data-sort="count">Emails</th>
+                            <th class="sortable" data-sort="confidence">Confidence</th>
+                            <th class="sortable" data-sort="first_seen">First Seen</th>
+                            <th class="sortable" data-sort="last_seen">Last Seen</th>
+                            <th>Sample Subjects</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for service in results.services %}
+                        <tr>
+                            <td class="domain">
+                                <strong>{{ service.domain }}</strong>
+                                {% if service.sender_count > 1 %}
+                                <span class="sender-count">({{ service.sender_count }} senders)</span>
+                                {% endif %}
+                            </td>
+                            <td class="count">{{ service.count }}</td>
+                            <td class="confidence">
+                                <span class="confidence-badge confidence-{{ service.confidence }}">
+                                    {{ service.confidence }}
+                                </span>
+                            </td>
+                            <td class="date">{{ service.first_seen[:10] if service.first_seen else 'Unknown' }}</td>
+                            <td class="date">{{ service.last_seen[:10] if service.last_seen else 'Unknown' }}</td>
+                            <td class="subjects">
+                                <ul>
+                                    {% for subject in service.subjects[:3] %}
+                                    <li>{{ subject[:60] }}{% if subject|length > 60 %}...{% endif %}</li>
+                                    {% endfor %}
+                                </ul>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </section>
+            {% else %}
+            <section class="no-results">
+                <p>No service emails were detected in your MBOX file.</p>
+            </section>
+            {% endif %}
+
+            <div class="actions">
+                <a href="{{ url_for('index') }}" class="btn">Analyze Another File</a>
+            </div>
+        </main>
+
+        <footer>
+            <p>Your data stays on your computer. No emails are uploaded to any server.</p>
+        </footer>
+    </div>
+
+    <script>
+        // Simple table sorting
+        const table = document.getElementById('results-table');
+        const headers = table.querySelectorAll('th.sortable');
+        let currentSort = { column: null, ascending: true };
+
+        headers.forEach(header => {
+            header.addEventListener('click', () => {
+                const column = header.dataset.sort;
+                const ascending = currentSort.column === column ? !currentSort.ascending : true;
+                currentSort = { column, ascending };
+
+                // Update header classes
+                headers.forEach(h => h.classList.remove('sort-asc', 'sort-desc'));
+                header.classList.add(ascending ? 'sort-asc' : 'sort-desc');
+
+                // Sort table
+                const tbody = table.querySelector('tbody');
+                const rows = Array.from(tbody.querySelectorAll('tr'));
+
+                rows.sort((a, b) => {
+                    let aVal, bVal;
+
+                    switch (column) {
+                        case 'domain':
+                            aVal = a.querySelector('.domain strong').textContent.toLowerCase();
+                            bVal = b.querySelector('.domain strong').textContent.toLowerCase();
+                            break;
+                        case 'count':
+                            aVal = parseInt(a.querySelector('.count').textContent);
+                            bVal = parseInt(b.querySelector('.count').textContent);
+                            break;
+                        case 'confidence':
+                            const order = { high: 3, medium: 2, low: 1 };
+                            aVal = order[a.querySelector('.confidence-badge').textContent.trim()];
+                            bVal = order[b.querySelector('.confidence-badge').textContent.trim()];
+                            break;
+                        case 'first_seen':
+                        case 'last_seen':
+                            aVal = a.querySelectorAll('.date')[column === 'first_seen' ? 0 : 1].textContent;
+                            bVal = b.querySelectorAll('.date')[column === 'first_seen' ? 0 : 1].textContent;
+                            if (aVal === 'Unknown') aVal = '';
+                            if (bVal === 'Unknown') bVal = '';
+                            break;
+                    }
+
+                    if (aVal < bVal) return ascending ? -1 : 1;
+                    if (aVal > bVal) return ascending ? 1 : -1;
+                    return 0;
+                });
+
+                rows.forEach(row => tbody.appendChild(row));
+            });
+        });
+    </script>
+</body>
+</html>

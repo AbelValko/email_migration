@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Email Service Analyzer</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Email Service Analyzer</h1>
+            <p class="subtitle">Analyze your MBOX export to identify services linked to your email</p>
+        </header>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <main>
+            <form action="{{ url_for('analyze') }}" method="post" enctype="multipart/form-data" id="upload-form">
+                <div class="upload-area" id="upload-area">
+                    <div class="upload-icon">📧</div>
+                    <p>Drag and drop your MBOX file here</p>
+                    <p class="small">or</p>
+                    <label class="file-input-label">
+                        <input type="file" name="mbox_file" accept=".mbox" id="file-input" required>
+                        Choose File
+                    </label>
+                    <p class="file-info">Maximum file size: {{ max_size_mb }}MB</p>
+                    <p class="selected-file" id="selected-file"></p>
+                </div>
+
+                <button type="submit" class="submit-btn" id="submit-btn" disabled>
+                    <span class="btn-text">Analyze</span>
+                    <span class="btn-loading" style="display: none;">
+                        <span class="spinner"></span>
+                        Analyzing...
+                    </span>
+                </button>
+            </form>
+
+            <section class="instructions">
+                <h2>How to export your emails from Yahoo Mail</h2>
+                <ol>
+                    <li>Go to Yahoo Mail Settings</li>
+                    <li>Click "More Settings"</li>
+                    <li>Select "Mailboxes"</li>
+                    <li>Click "Export" to download your MBOX file</li>
+                </ol>
+            </section>
+        </main>
+
+        <footer>
+            <p>Your data stays on your computer. No emails are uploaded to any server.</p>
+        </footer>
+    </div>
+
+    <script>
+        const uploadArea = document.getElementById('upload-area');
+        const fileInput = document.getElementById('file-input');
+        const selectedFile = document.getElementById('selected-file');
+        const submitBtn = document.getElementById('submit-btn');
+        const form = document.getElementById('upload-form');
+
+        // Drag and drop handling
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            uploadArea.addEventListener(eventName, e => {
+                e.preventDefault();
+                e.stopPropagation();
+            });
+        });
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            uploadArea.addEventListener(eventName, () => {
+                uploadArea.classList.add('dragover');
+            });
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            uploadArea.addEventListener(eventName, () => {
+                uploadArea.classList.remove('dragover');
+            });
+        });
+
+        uploadArea.addEventListener('drop', e => {
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                fileInput.files = files;
+                updateFileDisplay(files[0]);
+            }
+        });
+
+        fileInput.addEventListener('change', e => {
+            if (e.target.files.length > 0) {
+                updateFileDisplay(e.target.files[0]);
+            }
+        });
+
+        function updateFileDisplay(file) {
+            const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
+            selectedFile.textContent = `Selected: ${file.name} (${sizeMB} MB)`;
+            submitBtn.disabled = false;
+        }
+
+        form.addEventListener('submit', () => {
+            submitBtn.querySelector('.btn-text').style.display = 'none';
+            submitBtn.querySelector('.btn-loading').style.display = 'inline-flex';
+            submitBtn.disabled = true;
+        });
+    </script>
+</body>
+</html>
