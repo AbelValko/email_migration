@@ -347,6 +347,63 @@ header h1 {
     background: #4338ca;
 }
 
+/* Form card (IMAP login) */
+.form-card {
+    background: white;
+    border-radius: 12px;
+    padding: 2rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.form-group {
+    margin-bottom: 1.5rem;
+}
+
+.form-group label {
+    display: block;
+    font-weight: 600;
+    color: #1a1a2e;
+    margin-bottom: 0.5rem;
+}
+
+.form-group input,
+.form-group select {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    font-size: 1rem;
+    transition: border-color 0.2s;
+}
+
+.form-group input:focus,
+.form-group select:focus {
+    outline: none;
+    border-color: #4f46e5;
+}
+
+.field-hint {
+    font-size: 0.85rem;
+    color: #999;
+    margin-top: 0.5rem;
+}
+
+/* Alt option link */
+.alt-option {
+    text-align: center;
+    margin: 1.5rem 0;
+}
+
+.alt-option a {
+    color: #4f46e5;
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.alt-option a:hover {
+    text-decoration: underline;
+}
+
 /* Footer */
 footer {
     margin-top: 3rem;

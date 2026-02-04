@@ -1,9 +1,12 @@
-"""Email parsing and analysis logic for MBOX files."""
+"""Email parsing and analysis logic for MBOX files and IMAP."""
 
+import imaplib
 import mailbox
 import re
 from collections import defaultdict
 from datetime import datetime
+from email import message_from_bytes
+from email.header import decode_header
 from email.utils import parseaddr, parsedate_to_datetime
 from typing import Generator
 
@@ -236,6 +239,161 @@ def analyze_emails(filepath: str) -> dict:
         })
 
     # Sort by count descending
+    services.sort(key=lambda x: x['count'], reverse=True)
+
+    return {
+        'services': services,
+        'total_emails': total_emails,
+        'service_emails': service_emails,
+    }
+
+
+def decode_header_value(value: str | None) -> str:
+    """Decode an email header value that may be encoded."""
+    if not value:
+        return ''
+    try:
+        decoded_parts = decode_header(value)
+        result = ''
+        for part, encoding in decoded_parts:
+            if isinstance(part, bytes):
+                result += part.decode(encoding or 'utf-8', errors='replace')
+            else:
+                result += part
+        return result
+    except Exception:
+        return value if value else ''
+
+
+def parse_imap(host: str, username: str, password: str, folder: str = 'INBOX',
+               limit: int | None = None) -> Generator[dict, None, None]:
+    """
+    Connect to IMAP server and yield email metadata dictionaries.
+
+    Only fetches headers (FROM, SUBJECT, DATE) - not full body for speed.
+    """
+    mail = imaplib.IMAP4_SSL(host, 993)
+    try:
+        mail.login(username, password)
+        mail.select(folder, readonly=True)
+
+        # Search for all emails
+        _, message_numbers = mail.search(None, 'ALL')
+
+        if not message_numbers[0]:
+            return
+
+        msg_nums = message_numbers[0].split()
+
+        # Apply limit if specified (fetch most recent)
+        if limit and len(msg_nums) > limit:
+            msg_nums = msg_nums[-limit:]
+
+        for num in msg_nums:
+            try:
+                # Fetch only headers
+                _, msg_data = mail.fetch(num, '(BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE)])')
+
+                if not msg_data or not msg_data[0]:
+                    continue
+
+                raw_headers = msg_data[0][1]
+                if isinstance(raw_headers, bytes):
+                    msg = message_from_bytes(raw_headers)
+
+                    sender = decode_header_value(msg.get('From', ''))
+                    subject = decode_header_value(msg.get('Subject', ''))
+                    date_str = msg.get('Date', '')
+
+                    yield {
+                        'sender': sender,
+                        'subject': subject,
+                        'date': parse_date(date_str),
+                        'domain': extract_domain(sender),
+                    }
+            except Exception:
+                # Skip problematic messages
+                continue
+    finally:
+        try:
+            mail.logout()
+        except Exception:
+            pass
+
+
+def analyze_emails_imap(host: str, username: str, password: str,
+                        folder: str = 'INBOX', limit: int | None = None) -> dict:
+    """
+    Analyze emails from IMAP server and return grouped results by domain.
+
+    Returns same format as analyze_emails() for template compatibility.
+    """
+    domain_data = defaultdict(lambda: {
+        'count': 0,
+        'first_seen': None,
+        'last_seen': None,
+        'subjects': [],
+        'confidence_sum': 0,
+        'senders': set(),
+    })
+
+    total_emails = 0
+    service_emails = 0
+
+    for email in parse_imap(host, username, password, folder, limit):
+        total_emails += 1
+        domain = email.get('domain')
+
+        if not domain:
+            continue
+
+        is_service, confidence = is_service_email(email)
+
+        if not is_service:
+            continue
+
+        service_emails += 1
+        data = domain_data[domain]
+        data['count'] += 1
+        data['confidence_sum'] += confidence
+        data['senders'].add(email.get('sender', ''))
+
+        # Track date range
+        email_date = email.get('date')
+        if email_date:
+            if data['first_seen'] is None or email_date < data['first_seen']:
+                data['first_seen'] = email_date
+            if data['last_seen'] is None or email_date > data['last_seen']:
+                data['last_seen'] = email_date
+
+        # Keep sample subjects (up to 5)
+        subject = email.get('subject', '').strip()
+        if subject and len(data['subjects']) < 5:
+            if subject not in data['subjects']:
+                data['subjects'].append(subject)
+
+    # Convert to list and sort by count
+    services = []
+    for domain, data in domain_data.items():
+        avg_confidence = data['confidence_sum'] / data['count'] if data['count'] > 0 else 0
+
+        if avg_confidence >= 2.5:
+            confidence_label = 'high'
+        elif avg_confidence >= 1.5:
+            confidence_label = 'medium'
+        else:
+            confidence_label = 'low'
+
+        services.append({
+            'domain': domain,
+            'count': data['count'],
+            'first_seen': data['first_seen'].isoformat() if data['first_seen'] else None,
+            'last_seen': data['last_seen'].isoformat() if data['last_seen'] else None,
+            'subjects': data['subjects'],
+            'confidence': confidence_label,
+            'sender_count': len(data['senders']),
+        })
+
     services.sort(key=lambda x: x['count'], reverse=True)
 
     return {

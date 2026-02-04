@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IMAP Login - Email Service Analyzer</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Email Service Analyzer</h1>
+            <p class="subtitle">Connect directly to your Yahoo Mail via IMAP</p>
+        </header>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <main>
+            <form action="{{ url_for('analyze_imap') }}" method="post" id="imap-form">
+                <div class="form-card">
+                    <div class="form-group">
+                        <label for="email">Yahoo Email Address</label>
+                        <input type="email" name="email" id="email" required placeholder="you@yahoo.com">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="password">App Password</label>
+                        <input type="password" name="password" id="password" required placeholder="Your Yahoo App Password">
+                        <p class="field-hint">Use your Yahoo App Password, not your regular password.</p>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="folder">Mail Folder</label>
+                        <select name="folder" id="folder">
+                            <option value="INBOX">Inbox</option>
+                            <option value="Sent">Sent</option>
+                            <option value="Archive">Archive</option>
+                            <option value="Bulk Mail">Spam</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="limit">Limit (optional)</label>
+                        <input type="number" name="limit" id="limit" min="1" placeholder="e.g., 1000">
+                        <p class="field-hint">Scan only the most recent N emails. Leave empty for all.</p>
+                    </div>
+
+                    <button type="submit" class="submit-btn" id="submit-btn">
+                        <span class="btn-text">Connect & Analyze</span>
+                        <span class="btn-loading" style="display: none;">
+                            <span class="spinner"></span>
+                            Connecting...
+                        </span>
+                    </button>
+                </div>
+            </form>
+
+            <div class="alt-option">
+                <a href="{{ url_for('index') }}">Or upload an MBOX file instead</a>
+            </div>
+        </main>
+
+        <footer>
+            <p>Your credentials are used once to fetch emails and are not stored.</p>
+        </footer>
+    </div>
+
+    <script>
+        const form = document.getElementById('imap-form');
+        const submitBtn = document.getElementById('submit-btn');
+
+        form.addEventListener('submit', () => {
+            submitBtn.querySelector('.btn-text').style.display = 'none';
+            submitBtn.querySelector('.btn-loading').style.display = 'inline-flex';
+            submitBtn.disabled = true;
+        });
+    </script>
+</body>
+</html>
